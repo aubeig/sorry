@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Облачный плеер с субтитрами</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        :root {
+            --island-bg: #0b0b0b;
+            --island-border: rgba(255, 255, 255, 0.1);
+            --ease-apple: cubic-bezier(0.25, 1, 0.3, 1);
+            --accent-main: #0ea5e9;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --haze-opacity: 0.2;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background: #000;
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* ========= ПРЕЛОАДЕР ========= */
+        #preloader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 5000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        .preloader-cloud {
+            width: 120px;
+            height: 120px;
+            color: var(--accent-main);
+            filter: drop-shadow(0 0 25px var(--accent-main)) drop-shadow(0 0 50px var(--accent-main));
+            margin-bottom: 30px;
+            animation: cloudFloat 2s infinite alternate ease-in-out;
+        }
+        @keyframes cloudFloat {
+            from { transform: translateY(-10px); }
+            to   { transform: translateY(10px); }
+        }
+        .preloader-text {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            background: linear-gradient(135deg, #fff, #ccc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* ========= ФОН ========= */
+        #bg-dynamic {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: #020617;
+            transition: background 0.8s ease;
+        }
+
+        #bg-dynamic::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 50%, var(--accent-main) 0%, transparent 70%);
+            opacity: 0.25;
+            pointer-events: none;
+            transition: background 0.8s ease;
+        }
+
+        /* ========= APPLE ОСТРОВОК ========= */
+        #island-master-container {
+            position: fixed;
+            top: 15px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            z-index: 1000;
+            pointer-events: none;
+            font-family: 'Inter', sans-serif;
+            transform: translateY(-150px) scale(0.8);
+            opacity: 0;
+            transition: transform 0.8s var(--ease-apple), opacity 0.8s;
+        }
+        #island-master-container.island-visible {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+
+        #main-pill {
+            pointer-events: auto;
+            background: var(--island-bg);
+            border: 0.5px solid var(--island-border);
+            width: 120px;
+            height: 38px;
+            border-radius: 19px;
+            overflow: hidden;
+            position: relative;
+            color: white;
+            cursor: pointer;
+            transition: width 0.5s var(--ease-apple), height 0.5s var(--ease-apple), border-radius 0.5s var(--ease-apple);
+            box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255,255,255,0.1);
+        }
+        #bubble-wrapper {
+            width: 0px;
+            margin-left: 0px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: width 0.5s var(--ease-apple), margin-left 0.5s var(--ease-apple);
+        }
+        #bubble-pill {
+            pointer-events: auto;
+            background: var(--island-bg);
+            border: 0.5px solid var(--island-border);
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.4);
+            flex-shrink: 0;
+            transition: transform 0.5s var(--ease-apple), opacity 0.3s ease;
+            box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255,255,255,0.1);
+            overflow: hidden;
+            padding: 3px;
+        }
+
+        .island-content {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        .island-content.active {
+            opacity: 1;
+            pointer-events: auto;
+            transition-delay: 0.2s;
+        }
+
+        .idle-content {
+            justify-content: space-around;
+            padding: 0 18px;
+            width: 100%;
+        }
+        .idle-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-main);
+            box-shadow: 0 0 15px var(--accent-main);
+        }
+        .idle-bar {
+            width: 35px;
+            height: 5px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.2);
+        }
+
+        .music-wrapper {
+            padding: 0 16px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            box-sizing: border-box;
+        }
+        
+        @keyframes spin-art {
+            to { transform: rotate(360deg); }
+        }
+        
+        .art-box {
+            position: relative;
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.15);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .bubble-art-box {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .art-bg {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            background-image: url('обложка.jpg');
+            background-color: #282828;
+            animation: spin-art 8s linear infinite;
+            animation-play-state: paused;
+        }
+        .art-bg.playing {
+            animation-play-state: running;
+        }
+
+        .md3-vinyl-layer {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 4;
+            background: radial-gradient(circle, rgba(0,0,0,0.05) 15%, transparent 25%, transparent 60%, rgba(0,0,0,0.4) 100%);
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.5), inset 0 0 1.5px rgba(255,255,255,0.2);
+        }
+        .md3-center-hole {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: var(--island-bg);
+            border: 1.5px solid #282828;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .meta-text {
+            flex: 1;
+            margin-left: 14px;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        .meta-text h4 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            margin: 0;
+            padding-bottom: 2px;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+        .meta-text p {
+            font-size: 13px;
+            font-weight: 500;
+            color: rgba(255,255,255,0.5);
+            margin: 0;
+        }
+        
+        .play-btn-circle {
+            background: rgba(255,255,255,0.12);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            flex-shrink: 0;
+            margin-right: 12px;
+            transition: transform 0.2s ease, background 0.2s;
+        }
+        .play-btn-circle:active {
+            transform: scale(0.9);
+            background: rgba(255,255,255,0.25);
+        }
+        .viz-box {
+            display: flex;
+            align-items: flex-end;
+            gap: 3.5px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+        .viz-bar {
+            width: 3.5px;
+            height: 4px;
+            background: var(--accent-main);
+            border-radius: 4px;
+            transition: height 0.1s;
+        }
+        .viz-box.playing .viz-bar {
+            animation: viz-bounce 0.6s infinite alternate;
+        }
+        @keyframes viz-bounce {
+            0% { height: 4px; }
+            100% { height: 16px; }
+        }
+
+        /* ========= УВЕДОМЛЕНИЕ ========= */
+        .notif-wrapper {
+            padding: 0 16px 0 12px;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            box-sizing: border-box;
+            gap: 12px;
+        }
+        .notif-ring-box {
+            padding: 3px;
+            border-radius: 50%;
+            transition: background 0.3s;
+            display: flex;
+            flex-shrink: 0;
+            background: #22c55e;
+            align-self: center;
+        }
+        .notif-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2.5px solid #000;
+        }
+        .notif-text {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .notif-text-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #94a3b8;
+            display: block;
+            line-height: 1.2;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: 0.5px;
+        }
+        
+        .notif-text-sub {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            line-height: 1.3;
+            height: 3.6em;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .lyric-line {
+            position: absolute;
+            width: 100%;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            word-break: break-word;
+        }
+
+        /* ========= ОБЛОЖКИ С ОТРАЖЕНИЕМ ========= */
+        .arc-wrapper {
+            position: relative;
+            width: 100%;
+            height: 45vh;
+            margin-top: 100px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1200px;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 1s ease, transform 1s ease;
+        }
+        .arc-wrapper.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .album-card {
+            position: absolute;
+            width: 260px;
+            aspect-ratio: 1;
+            border-radius: 36px;
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            will-change: transform, opacity;
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(2px);
+            overflow: hidden;
+            
+            -webkit-box-reflect: below 5px linear-gradient(transparent, transparent, rgba(0,0,0,0.4));
+        }
+
+        .album-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 100%);
+            pointer-events: none;
+            border-radius: 36px;
+            mix-blend-mode: overlay;
+        }
+
+        /* ========= ПРЕМИАЛЬНОЕ СТЕКЛО ========= */
+        .controls-layer {
+            position: relative;
+            width: 92%;
+            max-width: 460px;
+            padding: 40px 30px;
+            border-radius: 44px;
+            
+            background: linear-gradient(135deg, 
+                rgba(255, 255, 255, 0.05) 0%, 
+                rgba(255, 255, 255, 0.02) 100%
+            );
+            backdrop-filter: blur(45px) saturate(210%);
+            -webkit-backdrop-filter: blur(45px) saturate(210%);
+            
+            border: 1px solid var(--glass-border);
+            
+            box-shadow: 
+                0 40px 80px -20px rgba(0, 0, 0, 0.8),
+                0 0 60px -5px var(--accent-main);
+            
+            overflow: hidden;
+            transition: box-shadow 0.8s ease, opacity 1s ease, transform 1s ease;
+            margin-bottom: 25px;
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        .controls-layer.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .controls-layer::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 100%, 
+                rgba(255,255,255, var(--haze-opacity)) 0%, 
+                transparent 50%
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .controls-layer::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, 
+                transparent, 
+                var(--accent-main), 
+                transparent
+            );
+            opacity: 0.7;
+            z-index: 2;
+        }
+
+        .track-title {
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 2px;
+            background: linear-gradient(135deg, #fff, #e0e0e0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1.2;
+            position: relative;
+            z-index: 3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track-artist {
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: var(--accent-main);
+            text-shadow: 0 0 20px var(--accent-main), 0 0 40px var(--accent-main);
+            filter: brightness(1.6) saturate(2.5);
+            position: relative;
+            z-index: 3;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ========= ТЕХНОЛОГИЧНЫЙ ПРОГРЕСС-БАР (ярче) ========= */
+        .progress-container {
+            position: relative;
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            margin: 35px 0 15px;
+            z-index: 3;
+        }
+
+        #progress-fill {
+            position: absolute;
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, 
+                transparent, 
+                var(--accent-main)
+            );
+            border-radius: 20px;
+            box-shadow: 0 0 25px var(--accent-main);
+            transition: width 0.1s linear;
+            pointer-events: none;
+        }
+
+        .thumb-indicator {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 35px var(--accent-main);
+            pointer-events: none;
+            z-index: 5;
+            left: 0%;
+        }
+
+        #progress-bar {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0; left: 0;
+            opacity: 0;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .time-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: #ccc;
+            margin-top: 5px;
+            position: relative;
+            z-index: 3;
+            font-weight: 600;
+        }
+
+        .playback-btns {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+            position: relative;
+            z-index: 3;
+        }
+
+        .btn-ios {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s var(--ease-apple), background 0.2s;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: white;
+            cursor: pointer;
+        }
+
+        .btn-ios:active {
+            transform: scale(0.85);
+            background: rgba(255,255,255,0.2);
+        }
+
+        .btn-play-pause {
+            width: 75px;
+            height: 75px;
+            background: #fff;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ПРЕЛОАДЕР -->
+    <div id="preloader">
+        <div class="preloader-cloud">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%">
+                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+            </svg>
+        </div>
+        <div class="preloader-text">Прости за задержку..💔</div>
+    </div>
+
+    <div id="bg-dynamic"></div>
+
+    <!-- ДИНАМИЧЕСКИЙ ОСТРОВОК -->
+    <div id="island-master-container">
+        <div id="main-pill" onclick="handleIslandClick()">
+            <!-- Ожидание -->
+            <div id="content-idle" class="island-content idle-content">
+                <div class="idle-dot"></div>
+                <div class="idle-bar"></div>
+            </div>
+            
+            <!-- Плеер с пластинкой -->
+            <div id="content-music" class="island-content music-wrapper active">
+                <div class="art-box">
+                    <div class="art-bg" id="art-main"></div>
+                    <div class="md3-vinyl-layer"></div>
+                    <div class="md3-center-hole"></div>
+                </div>
+                <div class="meta-text">
+                    <h4 id="song-title">Starboy</h4>
+                    <p id="song-artist">The Weeknd</p>
+                </div>
+                <button class="play-btn-circle" onclick="togglePlay(event)">
+                    <i data-lucide="play" id="play-icon" size="18"></i>
+                </button>
+                <div class="viz-box" id="visualizer">
+                    <div class="viz-bar" style="animation-delay: 0s;"></div>
+                    <div class="viz-bar" style="animation-delay: 0.2s;"></div>
+                    <div class="viz-bar" style="animation-delay: 0.1s;"></div>
+                </div>
+            </div>
+
+            <!-- Уведомление с каруселью текста -->
+            <div id="content-notif" class="island-content notif-wrapper">
+                <div class="notif-ring-box" id="n-ring">
+                    <img class="notif-avatar" src="облачко.jpg" onerror="this.src='https://api.dicebear.com/7.x/notionists/svg?seed=Galechka&backgroundColor=b6e3f4'"/>
+                </div>
+                <div class="notif-text">
+                    <span class="notif-text-title" id="n-title">Облачко ❤️</span>
+                    <div class="notif-text-sub" id="lyric-container">
+                        <div class="lyric-line" id="current-lyric">Слушаем музыку...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Кругляш -->
+        <div id="bubble-wrapper">
+            <div id="bubble-pill" onclick="handleIslandClick()">
+                <div class="bubble-art-box">
+                    <div class="art-bg" id="art-bubble"></div>
+                    <div class="md3-vinyl-layer"></div>
+                    <div class="md3-center-hole"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- АУДИО ПЛЕЕР -->
+    <audio id="audio-player" preload="auto" loop></audio>
+
+    <!-- ДУГА ОБЛОЖЕК -->
+    <div class="arc-wrapper" id="arc-gallery"></div>
+
+    <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
+    <div class="controls-layer" id="main-player">
+        <h1 class="track-title" id="display-title">Starboy</h1>
+        <p class="track-artist" id="display-artist">The Weeknd</p>
+
+        <!-- Прогресс-бар -->
+        <div class="progress-container">
+            <div id="progress-fill"></div>
+            <div id="thumb" class="thumb-indicator"></div>
+            <input type="range" id="progress-bar" value="0" step="0.01">
+        </div>
+
+        <div class="time-row">
+            <span id="current-time">0:00</span>
+            <span id="duration-time">0:00</span>
+        </div>
+
+        <div class="playback-btns">
+            <button class="btn-ios" onclick="changeTrack(-1)">
+                <i data-lucide="skip-back" fill="currentColor"></i>
+            </button>
+            <button class="btn-ios btn-play-pause" onclick="togglePlay()">
+                <i id="play-icon-main" data-lucide="pause" fill="currentColor"></i>
+            </button>
+            <button class="btn-ios" onclick="changeTrack(1)">
+                <i data-lucide="skip-forward" fill="currentColor"></i>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+const songs = [
+    {
+        title: "ОБЛОМОК ЗАБЫТЫХ БОГОВ",
+        artist: "Облочко & Анархия",
+        cover: "обложка.jpg",
+        color: "#2e1065",
+        audioSrc: "песенка.flac",
+        subtitles: [
+            { time: 11, text: "Делаешь вдох, считаю минуты," },
+            { time: 14, text: "Делаешь выдох, считаю года." },
+            { time: 16, text: "Но таких, как ты, не встречал никогда." },
+            { time: 23.3, text: "Сколько прошло? Тебя всё не вижу..." },
+            { time: 25.6, text: "Сколько прошло? С тех самых, та лет." },
+            { time: 34, text: "А я берегу на ладони ту осень," },
+            { time: 36, text: "Где мы потеряли с тобой берега." },
+            { time: 38, text: "Еще я помню, ту речку у сосен," },
+            { time: 41.0, text: "Твои слова про любовь навсегда..." },
+            { time: 45.0, text: "И буду помнить всегда." },
+            { time: 48.0, text: "Прошел день, потом другой..." },
+            { time: 50.5, text: "Но так не смог забыть я облик твой." },
+            { time: 57.0, text: "Листаю дни... как старый альбом." },
+            { time: 61.0, text: "Ищу тебя в сумерках... ищу за углом." },
+            { time: 68.0, text: "А ветер холодный... в пустые ладони" },
+            { time: 72.5, text: "Приносит лишь запах... далекой хвои." },
+            { time: 79.0, text: "Закрою глаза, вижу тот берег." },
+            { time: 81.0, text: "Открою глаза, пустота и туман." },
+            { time: 83.0, text: "Я так и не смог... никому не поверил," },
+            { time: 85.5, text: "Что эта любовь, просто горький обман." },
+            { time: 91.0, text: "Смотрю в облака, ищу в них ответы." },
+            { time: 93.0, text: "Смотрю в зеркала, не вижу себя." },
+            { time: 95.0, text: "Остались лишь тени... и старое лето," },
+            { time: 99.0, text: "И та полоса... золотого огня." }
+        ]
+    },
+    {
+        title: "Минута вечера",
+        artist: "Тима белорусских & Просто Лера & Облочко",
+        cover: "вечер.jpeg",
+        color: "#f2e088",
+        audioSrc: "вечер.flac",
+        subtitles: [
+            { time: 4, text: "Пока ты нам готовишь новую порцию драм" },
+            { time: 8, text: "Но минута и мы душа, а вообще курить бросай" },
+            { time: 12, text: "У-у-у" },
+            { time: 13, text: "Ещё одна минута вечера" },
+            { time: 15.5, text: "И мы с тобой вот-вот увидимся" },
+            { time: 18.5, text: "Ты будешь говорить о Вечности" },
+            { time: 22.2, text: "А я тупить и хотеть просто близости" },
+            { time: 24.2, text: "Ещё одна минута вечера" },
+            { time: 27, text: "И мы с тобой вот-вот увидимся" },
+            { time: 30, text: "Ты будешь говорить о Вечности" },
+            { time: 33, text: "А я тупить и хотеть просто близости" }
+        ]
+    },
+    {
+        title: "Крылья",
+        artist: "Наутилус Помпилиус & Облочко",
+        cover: "крылья.jpeg",
+        color: "#789bfa",
+        audioSrc: "наутилус.flac",
+        subtitles: [
+            { time: 24, text: "Ты снимаешь вечернее платье, стоя лицом к стене," },
+            { time: 31, text: "И я вижу свежие шрамы на гладкой, как бархат, спине." },
+            { time: 38, text: "Мне хочется плакать от боли или забыться во сне." },
+            { time: 46.5, text: "Где твои крылья, которые так нравились мне?" }
+        ]
+    },
+    {
+        title: "the raven",
+        artist: "не панк & Облочко",
+        cover: "судно.jpeg",
+        color: "#e35946",
+        audioSrc: "судно.flac",
+        subtitles: [
+            { time: 2, text: "Спит на волнах судно свободы" },
+            { time: 7, text: "Слышно только смех из-за борта" },
+            { time: 13, text: "Каждый из трюма с бутылкою рома" },
+            { time: 19.4, text: "Хочет на койку, но хуй там" },
+            { time: 24, text: "Я забил на изобилие, видя лица людей, но" },
+            { time: 26.5, text: "Тянет к воде, опускаются на дно" },
+            { time: 29, text: "Железная стена, — не видел мира дальше носа" },
+            { time: 32.5, text: "Только с запада артиста, да и тот, сука, гост" },
+            { time: 33, text: "Горизонт — границы нарисованы" }
+        ]
+    },
+    {
+        title: "Страшные следы",
+        artist: "emoslut666 & Облочко",
+        cover: "следы.jpeg",
+        color: "#f29488",
+        audioSrc: "вдоль.flac",
+        subtitles: [
+            { time: 8.5, text: "Зачем на твоей ручке эти страшные следы?" },
+            { time: 11, text: "Они как розы и печать, они как райские цветы" },
+            { time: 14, text: "Если захотела, можно вдоль, не поперёк" },
+            { time: 17, text: "Сказать «пока», сказать «прощай», жить по другому будет, но" },
+            { time: 20, text: "Зачем на твоей ручке эти страшные следы?" },
+            { time: 23, text: "Они как розы и печать, они как райские цветы" },
+            { time: 26.5, text: "Если захотела, можно вдоль, не поперёк" },
+            { time: 30, text: "Сказать «пока», сказать «прощай», жить по другому будет, но" }
+        ]
+    }
+];
+
+
+        let currentSongIndex = 0;
+        let isPlaying = true;
+        let currentActiveSubtitleText = "";
+        let lastLyricText = "";
+        let subTimer = null;
+
+        // Элементы
+        const AudioPlayer = document.getElementById('audio-player');
+        const artMain = document.getElementById('art-main');
+        const artBubble = document.getElementById('art-bubble');
+        const songTitle = document.getElementById('song-title');
+        const songArtist = document.getElementById('song-artist');
+        const displayTitle = document.getElementById('display-title');
+        const displayArtist = document.getElementById('display-artist');
+        const playIcon = document.getElementById('play-icon');
+        const playIconMain = document.getElementById('play-icon-main');
+        const viz = document.getElementById('visualizer');
+        const nRing = document.getElementById('n-ring');
+        const lyricContainer = document.getElementById('lyric-container');
+        const currentLyric = document.getElementById('current-lyric');
+        const progressBar = document.getElementById('progress-bar');
+        const currentTimeSpan = document.getElementById('current-time');
+        const durationSpan = document.getElementById('duration-time');
+        const progressFill = document.getElementById('progress-fill');
+        const thumb = document.getElementById('thumb');
+
+        // ======= ЛОГИКА ОСТРОВКА =======
+        let currentIslandState = 'music'; // изначально music, а не idle
+        let splitTimer = null;
+        const MasterBox = document.getElementById('island-master-container');
+        const Pill = document.getElementById('main-pill');
+        const BubbleWrap = document.getElementById('bubble-wrapper');
+        const Bubble = document.getElementById('bubble-pill');
+
+        function updateIslandUI(mode) {
+            currentIslandState = mode;
+            document.querySelectorAll('.island-content').forEach(el => el.classList.remove('active'));
+
+            if (mode === 'idle') {
+                Pill.style.width = '120px';
+                Pill.style.height = '38px';
+                Pill.style.borderRadius = '19px';
+                BubbleWrap.style.width = '0px';
+                BubbleWrap.style.marginLeft = '0px';
+                Bubble.style.transform = 'scale(0.3)';
+                Bubble.style.opacity = '0';
+                document.getElementById('content-idle').classList.add('active');
+            } else if (mode === 'music') {
+                Pill.style.width = '335px';
+                Pill.style.height = '82px';
+                Pill.style.borderRadius = '41px';
+                BubbleWrap.style.width = '0px';
+                BubbleWrap.style.marginLeft = '0px';
+                Bubble.style.transform = 'scale(0.3)';
+                Bubble.style.opacity = '0';
+                document.getElementById('content-music').classList.add('active');
+            } else if (mode === 'notif') {
+                Pill.style.width = '295px';
+                Pill.style.height = '96px';
+                Pill.style.borderRadius = '32px';
+                BubbleWrap.style.width = '58px';
+                BubbleWrap.style.marginLeft = '10px';
+                Bubble.style.transform = 'scale(1)';
+                Bubble.style.opacity = '1';
+                document.getElementById('content-notif').classList.add('active');
+            }
+        }
+
+        function handleIslandClick() {
+            if (currentIslandState === 'idle') {
+                updateIslandUI('music');
+            } else if (currentIslandState === 'music' && AudioPlayer.paused) {
+                updateIslandUI('idle');
+            }
+        }
+
+        // ======= КАРУСЕЛЬ ТЕКСТА (С ФИКСОМ НАСЛОЕНИЙ) =======
+        function updateLyric(newText) {
+            if (newText === lastLyricText) return;
+            lastLyricText = newText;
+
+            // Убиваем все текущие анимации текста
+            gsap.killTweensOf(".lyric-line");
+
+            const currentLine = document.getElementById('current-lyric');
+            const newLine = document.createElement('div');
+            newLine.className = 'lyric-line';
+            newLine.innerText = newText;
+            newLine.style.transform = 'translateY(100%)';
+            newLine.style.opacity = '0';
+            lyricContainer.appendChild(newLine);
+
+            gsap.to(currentLine, {
+                y: '-100%',
+                opacity: 0,
+                duration: 0.15,
+                ease: "power2.in",
+                onComplete: () => currentLine.remove()
+            });
+
+            gsap.to(newLine, {
+                y: '0%',
+                opacity: 1,
+                duration: 0.15,
+                delay: 0.05,
+                ease: "power2.out"
+            });
+            
+            newLine.id = 'current-lyric';
+        }
+
+        function triggerNotification(subtitleTxt) {
+            clearTimeout(splitTimer);
+            
+            updateLyric(subtitleTxt);
+
+            nRing.style.background = 'linear-gradient(135deg, #38bdf8, #0ea5e9)';
+            updateIslandUI('notif');
+            splitTimer = setTimeout(() => {
+                updateIslandUI('music');
+            }, 2500);
+        }
+
+        // ======= УМНАЯ ЛОГИКА СУБТИТРОВ =======
+        function checkSubtitles(currentTime) {
+            if (!isPlaying) return;
+
+            const subs = songs[currentSongIndex].subtitles;
+            if (!subs || subs.length === 0) return;
+
+            // Ищем последнюю подходящую субтитру (массив должен быть отсортирован по времени)
+            let activeSub = null;
+            for (let i = 0; i < subs.length; i++) {
+                if (subs[i].time <= currentTime) {
+                    activeSub = subs[i];
+                } else {
+                    break;
+                }
+            }
+
+            if (activeSub && activeSub.text !== currentActiveSubtitleText) {
+                currentActiveSubtitleText = activeSub.text;
+                triggerNotification(activeSub.text);
+            }
+        }
+
+        // ======= ОБНОВЛЕНИЕ ФОНА (акцентный цвет) =======
+        function updateDynamicBackground(color) {
+            document.documentElement.style.setProperty('--accent-main', color);
+        }
+
+        // ======= ЛОГИКА ПЛЕЕРА =======
+        function initApp() {
+            // Убираем прелоадер
+            gsap.to("#preloader", {
+                y: "-100%",
+                duration: 1.2,
+                ease: "power4.inOut",
+                onComplete: () => {
+                    document.getElementById('preloader').style.display = 'none';
+                }
+            });
+
+            // Показываем островок
+            MasterBox.classList.add('island-visible');
+            updateIslandUI('music'); // по умолчанию music
+
+            // Показываем дугу и панель с анимацией
+            document.querySelector('.arc-wrapper').classList.add('visible');
+            document.querySelector('.controls-layer').classList.add('visible');
+
+            createCoverCards();
+            updateSongInfo();
+            updatePlayState(true);
+            AudioPlayer.play().catch(() => {});
+        }
+
+        function createCoverCards() {
+            const gallery = document.getElementById('arc-gallery');
+            gallery.innerHTML = '';
+            songs.forEach((s, i) => {
+                const card = document.createElement('div');
+                card.className = 'album-card';
+                card.style.backgroundImage = `url(${s.cover})`;
+                card.id = `album-${i}`;
+                gallery.appendChild(card);
+            });
+            renderArc();
+        }
+
+        function renderArc() {
+            songs.forEach((_, i) => {
+                const card = document.getElementById(`album-${i}`);
+                const diff = i - currentSongIndex;
+                const xPos = diff * 300;
+                const yPos = Math.abs(diff) * 60;
+                const rotation = diff * 25;
+                const scale = 1 - Math.abs(diff) * 0.25;
+                const opacity = 1 - Math.abs(diff) * 0.7;
+
+                gsap.to(card, {
+                    x: xPos,
+                    y: yPos,
+                    rotationY: -rotation,
+                    scale: scale,
+                    opacity: opacity,
+                    duration: 0.8,
+                    ease: "power4.out",
+                    zIndex: 100 - Math.abs(diff)
+                });
+            });
+        }
+
+        function updateSongInfo() {
+            const s = songs[currentSongIndex];
+            
+            currentActiveSubtitleText = "";
+            lastLyricText = "";
+
+            songTitle.innerText = s.title;
+            songArtist.innerText = s.artist;
+            displayTitle.innerText = s.title;
+            displayArtist.innerText = s.artist;
+            artMain.style.backgroundImage = `url(${s.cover})`;
+            artBubble.style.backgroundImage = `url(${s.cover})`;
+            
+            updateDynamicBackground(s.color);
+
+            AudioPlayer.src = s.audioSrc;
+            if (isPlaying) AudioPlayer.play();
+        }
+
+        function changeTrack(direction) {
+            currentSongIndex = (currentSongIndex + direction + songs.length) % songs.length;
+            renderArc();
+            updateSongInfo();
+            gsap.fromTo("#main-pill", { y: -10, scale: 1.1 }, { y: 0, scale: 1, duration: 0.6, ease: "elastic.out(1, 0.5)" });
+        }
+
+        function togglePlay(event) {
+            if (event) event.stopPropagation();
+            
+            // Анимация нажатия
+            gsap.fromTo(".btn-play-pause", { scale: 0.8 }, { scale: 1, duration: 0.4, ease: "backOut" });
+            
+            if (AudioPlayer.paused) {
+                AudioPlayer.play();
+                updatePlayState(true);
+            } else {
+                AudioPlayer.pause();
+                updatePlayState(false);
+            }
+        }
+
+        function updatePlayState(playing) {
+            isPlaying = playing;
+            if (playing) {
+                playIcon.setAttribute('data-lucide', 'pause');
+                playIconMain.setAttribute('data-lucide', 'pause');
+                viz.classList.add('playing');
+                artMain.classList.add('playing');
+                artBubble.classList.add('playing');
+            } else {
+                playIcon.setAttribute('data-lucide', 'play');
+                playIconMain.setAttribute('data-lucide', 'play');
+                viz.classList.remove('playing');
+                artMain.classList.remove('playing');
+                artBubble.classList.remove('playing');
+            }
+            lucide.createIcons();
+
+            // ---------- ВАЖНО: УБРАЛ ИЗМЕНЕНИЕ РАЗМЕРОВ ПРИ ПАУЗЕ ----------
+            // Островок остаётся в режиме music (335x82) всегда, кроме переключения вручную
+            // Размеры уже установлены в updateIslandUI, и мы их не меняем здесь
+        }
+
+        // ======= ПРОГРЕСС И СУБТИТРЫ (ONTIMEUPDATE) =======
+        function updateProgressUI() {
+            const cur = AudioPlayer.currentTime;
+            const dur = AudioPlayer.duration || 1;
+            const percent = (cur / dur) * 100;
+            
+            progressFill.style.width = percent + '%';
+            thumb.style.left = percent + '%';
+            
+            currentTimeSpan.innerText = formatTime(cur);
+            durationSpan.innerText = formatTime(dur);
+        }
+
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        // Обработчик ползунка (ручное перемещение) – сбрасываем субтитры
+        progressBar.addEventListener('input', () => {
+            const duration = AudioPlayer.duration;
+            if (duration) {
+                AudioPlayer.currentTime = (progressBar.value / 100) * duration;
+                currentActiveSubtitleText = ""; // сброс, чтобы при перемотке показать правильную строку
+            }
+        });
+
+        // Основной цикл обновления времени и субтитров
+        AudioPlayer.ontimeupdate = function() {
+            updateProgressUI();
+            checkSubtitles(AudioPlayer.currentTime);
+        };
+
+        // Запуск после загрузки страницы
+        window.onload = () => {
+            // Прелоадер автоматически исчезнет через 2.5 сек
+            setTimeout(() => {
+                initApp();
+            }, 2500);
+        };
+    </script>
+</body>
